@@ -105,6 +105,7 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 		}
 		
 		pCustom.SetKeyvalue( "$f_lastAntiBlock", g_Engine.time );
+		tCustom.SetKeyvalue( "$f_lastAntiBlock", g_Engine.time );
 		
 		uiFlags |= PlrHook_SkipUse;
 	}
