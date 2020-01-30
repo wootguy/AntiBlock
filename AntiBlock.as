@@ -21,10 +21,11 @@ void PluginInit()
 	
 	g_Hooks.RegisterHook( Hooks::Player::PlayerUse, @PlayerUse );
 	g_Hooks.RegisterHook( Hooks::Player::PlayerTakeDamage, @PlayerTakeDamage );
+	g_Hooks.RegisterHook( Hooks::Player::ClientSay, @ClientSay );
 	
 	@g_disabled = CCVar("disabled", 0, "disables AntiBlock", ConCommandFlag::AdminOnly);
 	@g_cooldown = CCVar("cooldown", 0.6f, "Time before a swapped player can be swapped with again", ConCommandFlag::AdminOnly);
-	@g_stomp_mode = CCVar("stomp", STOMP_SPLIT, "Stomp mode (0=off, 1=split damage, 2=duplicate damage", ConCommandFlag::AdminOnly);
+	@g_stomp_mode = CCVar("stomp", STOMP_SPLIT, "Stomp mode (0=off, 1=split, 2=bottom only, 3=duplicate)", ConCommandFlag::AdminOnly);
 }
 
 CBaseEntity@ TraceLook(CBasePlayer@ plr, float dist=1)
@@ -212,4 +213,62 @@ HookReturnCode PlayerTakeDamage(DamageInfo@ info)
 	}
 	
 	return HOOK_CONTINUE;
+}
+
+
+bool doCommand(CBasePlayer@ plr, const CCommand@ args)
+{	
+	if ( args.ArgC() > 0 )
+	{
+		if ( args[0] == ".antiblock" )
+		{
+			g_PlayerFuncs.SayText(plr, "AntiBlock version 2\n");
+			
+			if (g_disabled.GetBool()) {
+				g_PlayerFuncs.SayText(plr, "    Disabled on this map\n");
+				return true;
+			}
+			
+			g_PlayerFuncs.SayText(plr, "    Cooldown = " + g_cooldown.GetFloat() + "\n");
+			
+			string stompMode = "" + g_stomp_mode.GetInt();
+			
+			switch(g_stomp_mode.GetInt()) {
+				
+				case STOMP_SPLIT: stompMode += " (split damage)"; break;
+				case STOMP_SPLIT_BOTTOM: stompMode += " (bottom only)"; break;
+				case STOMP_DUPLICATE: stompMode += " (duplicate damage)"; break;
+				case STOMP_OFF:
+				default:
+					stompMode += " (disabled)";
+			}
+			
+			g_PlayerFuncs.SayText(plr, "    Stomp mode = " + stompMode + "\n");
+			
+			return true;
+		}
+	}
+	return false;
+}
+
+HookReturnCode ClientSay( SayParameters@ pParams )
+{	
+	CBasePlayer@ plr = pParams.GetPlayer();
+	const CCommand@ args = pParams.GetArguments();
+	
+	if (doCommand(plr, args))
+	{
+		pParams.ShouldHide = true;
+		return HOOK_HANDLED;
+	}
+	
+	return HOOK_CONTINUE;
+}
+
+CClientCommand _antiblock("antiblock", "Anti-rush status", @consoleCmd );
+
+void consoleCmd( const CCommand@ args )
+{
+	CBasePlayer@ plr = g_ConCommandSystem.GetCurrentPlayer();
+	doCommand(plr, args);
 }
