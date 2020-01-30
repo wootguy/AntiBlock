@@ -4,6 +4,15 @@ void println(string text) { print(text + "\n"); }
 
 CCVar@ g_disabled;
 CCVar@ g_cooldown;
+CCVar@ g_stomp_mode;
+
+enum STOMP_MODE {
+	STOMP_OFF = 0,			// normal fall damage logic
+	STOMP_SPLIT,			// split damage between all players involved
+	STOMP_SPLIT_BOTTOM,		// split damage across the players that got stomped on
+	STOMP_DUPLICATE,		// apply full damage to each player
+	STOMP_MODES
+}
 
 void PluginInit()
 {
@@ -11,9 +20,11 @@ void PluginInit()
 	g_Module.ScriptInfo.SetContactInfo( "w00tguy123 - forums.svencoop.com" );
 	
 	g_Hooks.RegisterHook( Hooks::Player::PlayerUse, @PlayerUse );
+	g_Hooks.RegisterHook( Hooks::Player::PlayerTakeDamage, @PlayerTakeDamage );
 	
 	@g_disabled = CCVar("disabled", 0, "disables AntiBlock", ConCommandFlag::AdminOnly);
 	@g_cooldown = CCVar("cooldown", 0.6f, "Time before a swapped player can be swapped with again", ConCommandFlag::AdminOnly);
+	@g_stomp_mode = CCVar("stomp", STOMP_SPLIT, "Stomp mode (0=off, 1=split damage, 2=duplicate damage", ConCommandFlag::AdminOnly);
 }
 
 CBaseEntity@ TraceLook(CBasePlayer@ plr, float dist=1)
@@ -108,6 +119,85 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 		tCustom.SetKeyvalue( "$f_lastAntiBlock", g_Engine.time );
 		
 		uiFlags |= PlrHook_SkipUse;
+	}
+	
+	return HOOK_CONTINUE;
+}
+
+HookReturnCode PlayerTakeDamage(DamageInfo@ info)
+{
+	CBasePlayer@ plr = cast<CBasePlayer@>(g_EntityFuncs.Instance(info.pVictim.pev));
+	entvars_t@ pevInflictor = info.pInflictor !is null ? info.pInflictor.pev : null;
+	entvars_t@ pevAttacker = info.pAttacker !is null ? info.pAttacker.pev : null;
+	
+	int stomp_mode = g_stomp_mode.GetInt();
+	bool stomping_enabled = stomp_mode > STOMP_OFF || stomp_mode < STOMP_MODES;
+
+	if (stomping_enabled && info.bitsDamageType & DMG_FALL != 0) {		
+		array<CBaseEntity@> ent_hits;
+		array<int> ent_hit_old_solid;
+		
+		ent_hits.insertLast(plr);
+		ent_hit_old_solid.insertLast(plr.pev.solid);
+		
+		int splitCount = 1;
+		int infiniteLoopSafety = 1000;
+		for (int i = 0; i < infiniteLoopSafety; i++) {
+			TraceResult tr;
+			Vector dir = Vector(0,0,-1);
+			HULL_NUMBER hullType = plr.pev.flags & FL_DUCKING != 0 ? head_hull : human_hull;
+			g_Utility.TraceHull( plr.pev.origin, plr.pev.origin + dir, dont_ignore_monsters, hullType, plr.edict(), tr );
+			
+			CBaseEntity@ phit = g_EntityFuncs.Instance( tr.pHit );
+			if (phit is null || phit.IsBSPModel())
+				break;
+		
+			ent_hits.insertLast(phit);
+			ent_hit_old_solid.insertLast(phit.pev.solid);
+			
+			if (phit.IsPlayer()) { // monsters take damage from stomping already, and that can't be bypassed(?)
+				splitCount += 1;
+			}
+			
+			if (splitCount >= 5) {
+				break; // don't split damage across players that are stuck inside each other
+			}
+			
+			if (i == infiniteLoopSafety-1) {
+				println("WARNING: Infinite loop in AntiBlock plugin stomp logic. Tell w00tguy how that happened pls.");
+			}
+			
+			phit.pev.solid = SOLID_NOT; // check for other ents in the same spot
+		}
+		
+		int dmgSplit = int(info.flDamage / float(splitCount));
+		
+		if (stomp_mode == STOMP_DUPLICATE) {
+			dmgSplit = int(info.flDamage);
+			//println("Applying " + info.flDamage + " damage to " + ent_hits.size() + " players");
+		}
+		else {
+			//println("Splitting " + info.flDamage + " damage across " + ent_hits.size() + " players = " + dmgSplit);
+		}
+		
+		for (uint i = 0; i < ent_hits.size(); i++) {
+			ent_hits[i].pev.solid = ent_hit_old_solid[i];
+			
+			if (stomp_mode == STOMP_SPLIT_BOTTOM && i == 0) {
+				continue; // first idx is always the stomper
+			}
+			
+			if (ent_hits[i].IsPlayer()) {
+				ent_hits[i].pev.dmg_take += dmgSplit;
+				ent_hits[i].pev.health -= dmgSplit;
+				if (ent_hits[i].pev.health <= 0) {
+					ent_hits[i].Killed( pevAttacker, GIB_NORMAL );
+				}
+			}
+		}
+		
+		// bypass sven damage logic
+		info.flDamage = 0;
 	}
 	
 	return HOOK_CONTINUE;
