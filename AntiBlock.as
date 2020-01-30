@@ -170,34 +170,45 @@ HookReturnCode PlayerTakeDamage(DamageInfo@ info)
 			phit.pev.solid = SOLID_NOT; // check for other ents in the same spot
 		}
 		
-		int dmgSplit = int(info.flDamage / float(splitCount));
-		
-		if (stomp_mode == STOMP_DUPLICATE) {
-			dmgSplit = int(info.flDamage);
-			//println("Applying " + info.flDamage + " damage to " + ent_hits.size() + " players");
-		}
-		else {
-			//println("Splitting " + info.flDamage + " damage across " + ent_hits.size() + " players = " + dmgSplit);
+		if (stomp_mode == STOMP_SPLIT_BOTTOM) {
+			splitCount -= 1;
 		}
 		
-		for (uint i = 0; i < ent_hits.size(); i++) {
-			ent_hits[i].pev.solid = ent_hit_old_solid[i];
+		if (splitCount > 0) {
+			int dmgSplit = int(info.flDamage / float(splitCount));
 			
-			if (stomp_mode == STOMP_SPLIT_BOTTOM && i == 0) {
-				continue; // first idx is always the stomper
+			if (stomp_mode == STOMP_DUPLICATE) {
+				dmgSplit = int(info.flDamage);
+				//println("Applying " + info.flDamage + " damage to " + splitCount + " players");
+			}
+			else {
+				//println("Splitting " + info.flDamage + " damage across " + splitCount + " players = " + dmgSplit);
 			}
 			
-			if (ent_hits[i].IsPlayer()) {
-				ent_hits[i].pev.dmg_take += dmgSplit;
-				ent_hits[i].pev.health -= dmgSplit;
-				if (ent_hits[i].pev.health <= 0) {
-					ent_hits[i].Killed( pevAttacker, GIB_NORMAL );
+			for (uint i = 0; i < ent_hits.size(); i++) {
+				ent_hits[i].pev.solid = ent_hit_old_solid[i];
+				
+				if (stomp_mode == STOMP_SPLIT_BOTTOM && i == 0) {
+					continue; // first idx is always the stomper
+				}
+				
+				if (ent_hits[i].IsPlayer()) {
+					ent_hits[i].pev.dmg_take += dmgSplit;
+					ent_hits[i].pev.health -= dmgSplit;
+					if (ent_hits[i].pev.health <= 0) {
+						ent_hits[i].Killed( pevAttacker, GIB_NORMAL );
+					}
+					if (i != 0) {
+						// fall damage effect for victims (best guess)
+						ent_hits[i].pev.punchangle.x += 4 + 12*(Math.min(100, dmgSplit) / 100.0f);
+						g_PlayerFuncs.ScreenShake(ent_hits[i].pev.origin, 255.0f, 255.0f, 0.5f, 1.0f);
+					}
 				}
 			}
+			
+			// bypass sven damage logic
+			info.flDamage = 0;
 		}
-		
-		// bypass sven damage logic
-		info.flDamage = 0;
 	}
 	
 	return HOOK_CONTINUE;
