@@ -14,6 +14,16 @@ enum STOMP_MODE {
 	STOMP_MODES
 }
 
+class DoorState {
+	EHandle ent;
+	int lastToggleState = 0;
+	int blockCounter = 0;
+	float lastToggleTime = 0;
+	float originalDamage = 0;
+}
+
+array<DoorState> g_rotating_doors;
+
 void PluginInit()
 {
 	g_Module.ScriptInfo.SetAuthor( "w00tguy" );
@@ -26,6 +36,81 @@ void PluginInit()
 	@g_disabled = CCVar("disabled", 0, "disables AntiBlock", ConCommandFlag::AdminOnly);
 	@g_cooldown = CCVar("cooldown", 0.6f, "Time before a swapped player can be swapped with again", ConCommandFlag::AdminOnly);
 	@g_stomp_mode = CCVar("stomp", STOMP_SPLIT, "Stomp mode (0=off, 1=split, 2=bottom only, 3=duplicate)", ConCommandFlag::AdminOnly);
+	
+	findRotatingDoors();
+	
+	g_Scheduler.SetInterval("doorLoop", 0.1f, -1); // odd number to prevent toggle state getting in sync with door thinking
+}
+
+void MapActivate() {
+	findRotatingDoors();
+}
+
+void findRotatingDoors() {
+	g_rotating_doors.resize(0);
+	
+	CBaseEntity@ ent = null;
+	do {
+		@ent = g_EntityFuncs.FindEntityByClassname(ent, "func_door_rotating"); 
+		if (ent !is null)
+		{
+			if (ent.pev.dmg <= 10) {
+				DoorState doorState;
+				doorState.originalDamage = ent.pev.dmg;
+				
+				doorState.ent = EHandle(ent);
+				g_rotating_doors.insertLast(doorState);
+			}
+		}
+	} while (ent !is null);
+}
+
+void doorLoop() {
+	for (uint i = 0; i < g_rotating_doors.length(); i++) {
+		DoorState@ state = g_rotating_doors[i];
+		CBaseDoor@ ent = cast<CBaseDoor@>(state.ent.GetEntity());
+		if (ent is null) {
+			continue;
+		}
+		
+		if (ent.m_toggle_state != state.lastToggleState) {
+			float delay = g_Engine.time - state.lastToggleTime;
+			
+			if (delay < 1.0f) {
+				state.blockCounter++;
+				
+				if (state.blockCounter >= 12) {
+					ent.pev.dmg = 1000;
+				}
+				else if (state.blockCounter >= 10) {
+					ent.pev.dmg = 500;
+				}
+				else if (state.blockCounter >= 8) {
+					ent.pev.dmg = 100;
+				}
+				else if (state.blockCounter >= 4) {
+					ent.pev.dmg = 40; // any higher than this and there's a chance to gib
+				}
+				else if (state.blockCounter >= 2) {
+					ent.pev.dmg = 10;
+				}
+				
+				// blocker could be also be the opener, which the door won't always do damage to when blocked
+				// openers can do this by lodging themselves into the hinge of the door and looking in a certain direction.
+				if (state.blockCounter >= 16) {
+					CBaseEntity@ activator = ent.m_hActivator;
+					activator.TakeDamage( ent.pev, ent.pev, ent.pev.dmg, DMG_CRUSH);
+				}
+				
+			} else {
+				state.blockCounter = 0;
+				ent.pev.dmg = state.originalDamage;
+			}
+			
+			state.lastToggleState = ent.m_toggle_state;
+			state.lastToggleTime = g_Engine.time;
+		}	
+	}
 }
 
 CBaseEntity@ TraceLook(CBasePlayer@ plr, float dist=1)
