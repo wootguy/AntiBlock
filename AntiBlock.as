@@ -288,15 +288,27 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 			bool dstDucking = target.pev.flags & FL_DUCKING != 0;
 			
 			plr.pev.origin = target.pev.origin;
+			target.pev.origin = srcOri;
+			
 			if (dstDucking) {
 				plr.pev.flDuckTime = 26;
 				plr.pev.flags |= FL_DUCKING;
-			} else if (srcDucking) {
+				
+				// prevent gibbing on elevators when swapper is crouching and swappee is not
+				CBaseEntity@ dstElev = g_EntityFuncs.Instance( target.pev.groundentity );
+				if (!srcDucking && dstElev !is null && dstElev.pev.velocity.z > 0) {
+					plr.pev.origin.z += 18; 
+				}
+			}
+			if (srcDucking) {
 				target.pev.flDuckTime = 26;
 				target.pev.flags |= FL_DUCKING;
+				
+				CBaseEntity@ srcElev = g_EntityFuncs.Instance( plr.pev.groundentity );
+				if (!dstDucking && srcElev !is null && srcElev.pev.velocity.z > 0) {
+					target.pev.origin.z += 18; 
+				}
 			}
-			
-			target.pev.origin = srcOri;
 		}
 		
 		
