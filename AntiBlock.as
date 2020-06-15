@@ -189,6 +189,17 @@ array<CBaseEntity@> getAntiblockTargets(CBasePlayer@ plr, Vector swapDir) {
 	return targets;
 }
 
+bool swapCooledDown(CBasePlayer@ swapper, float maxSwapTime) {
+	if (g_Engine.time - maxSwapTime < g_cooldown.GetFloat()) {
+		if (g_cooldown.GetFloat() > 1) {
+			float waitTime = (maxSwapTime + g_cooldown.GetFloat()) - g_Engine.time;
+			g_PlayerFuncs.PrintKeyBindingString(swapper, "Wait " + format_float(waitTime) + " seconds\n");
+		}
+		return false;
+	}
+	return true;
+}
+
 HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 {	
 	if (plr.m_afButtonPressed & IN_USE == 0 or g_disabled.GetBool()) {
@@ -202,25 +213,28 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 		
 	CBaseEntity@ target = targets[0];
 	
-	if (target !is null and plr.pev.flags & FL_ONTRAIN == 0) {
-		CustomKeyvalues@ pCustom = plr.GetCustomKeyvalues();
-		CustomKeyvalues@ tCustom = target.GetCustomKeyvalues();
-		CustomKeyvalue pValue( pCustom.GetKeyvalue( "$f_lastAntiBlock" ) );
-		CustomKeyvalue tValue( tCustom.GetKeyvalue( "$f_lastAntiBlock" ) );
-		
-		// don't let blockers immediately swap back to where they were
-		float maxLastUse = Math.max(pValue.GetFloat(), tValue.GetFloat());
-		if (g_Engine.time - maxLastUse < g_cooldown.GetFloat()) {
-			if (g_cooldown.GetFloat() > 1) {
-				float waitTime = (maxLastUse + g_cooldown.GetFloat()) - g_Engine.time;
-				g_PlayerFuncs.PrintKeyBindingString(plr, "Wait " + format_float(waitTime) + " seconds\n");
-			}
-			return HOOK_CONTINUE;
-		}
-	
+	if (target !is null and plr.pev.flags & FL_ONTRAIN == 0) {	
 		bool swappedMultiple = false;
+		
+		CustomKeyvalues@ pCustom = plr.GetCustomKeyvalues();
+		CustomKeyvalue pValue( pCustom.GetKeyvalue( "$f_lastAntiBlock" ) );
+		
 		if (targets.length() > 1) {
 			bool allSafeSwaps = true;
+			
+			float mostRecentSwapTime = pValue.GetFloat();
+			for (uint i = 0; i < targets.length(); i++) {
+				CustomKeyvalues@ tCustom = targets[i].GetCustomKeyvalues();
+				CustomKeyvalue tValue( tCustom.GetKeyvalue( "$f_lastAntiBlock" ) );
+				float time = tValue.GetFloat();
+				if (time > mostRecentSwapTime) {
+					mostRecentSwapTime = time;
+				}
+			}
+			
+			if (!swapCooledDown(plr, mostRecentSwapTime)) {
+				return HOOK_CONTINUE;
+			}
 			
 			array<Vector> newTargetPos;
 			
@@ -267,6 +281,9 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 					targets[i].pev.origin = newTargetPos[i];
 					targets[i].pev.flDuckTime = 26;
 					targets[i].pev.flags |= FL_DUCKING;
+					
+					CustomKeyvalues@ t2Custom = targets[i].GetCustomKeyvalues();
+					t2Custom.SetKeyvalue( "$f_lastAntiBlock", g_Engine.time );
 				}
 				
 				plr.pev.origin = plr.pev.origin + swapDir*maxDist;
@@ -283,6 +300,14 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 		}
 	
 		if (!swappedMultiple) {
+			CustomKeyvalues@ tCustom = target.GetCustomKeyvalues();
+			CustomKeyvalue tValue( tCustom.GetKeyvalue( "$f_lastAntiBlock" ) );
+			
+			// don't let blockers immediately swap back to where they were
+			if (!swapCooledDown(plr, Math.max(pValue.GetFloat(), tValue.GetFloat()))) {
+				return HOOK_CONTINUE;
+			}
+			
 			Vector srcOri = plr.pev.origin;
 			bool srcDucking = plr.pev.flags & FL_DUCKING != 0;
 			bool dstDucking = target.pev.flags & FL_DUCKING != 0;
@@ -309,11 +334,12 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 					target.pev.origin.z += 18; 
 				}
 			}
+			
+			pCustom.SetKeyvalue( "$f_lastAntiBlock", g_Engine.time );
+			tCustom.SetKeyvalue( "$f_lastAntiBlock", g_Engine.time );
 		}
 		
-		
-		pCustom.SetKeyvalue( "$f_lastAntiBlock", g_Engine.time );
-		tCustom.SetKeyvalue( "$f_lastAntiBlock", g_Engine.time );
+		g_SoundSystem.PlaySound( plr.edict(), CHAN_BODY, "weapons/xbow_hitbod2.wav", 0.7f, 1.0f, 0, 130 + Math.RandomLong(0, 10));
 		
 		uiFlags |= PlrHook_SkipUse;
 	}
@@ -418,7 +444,7 @@ bool doCommand(CBasePlayer@ plr, const CCommand@ args)
 	{
 		if ( args[0] == ".antiblock" )
 		{
-			g_PlayerFuncs.SayText(plr, "AntiBlock version 2\n");
+			g_PlayerFuncs.SayText(plr, "AntiBlock version 3\n");
 			
 			if (g_disabled.GetBool()) {
 				g_PlayerFuncs.SayText(plr, "    Disabled on this map\n");
