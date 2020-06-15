@@ -113,9 +113,7 @@ void doorLoop() {
 	}
 }
 
-CBaseEntity@ TraceLook(CBasePlayer@ plr, float dist=1)
-{
-	Vector vecSrc = plr.pev.origin;
+Vector getSwapDir(CBasePlayer@ plr) {
 	Vector angles = plr.pev.v_angle;
 	
 	// snap to 90 degree angles
@@ -128,27 +126,38 @@ CBaseEntity@ TraceLook(CBasePlayer@ plr, float dist=1)
 	} else {
 		angles.x = 0;
 	}
-
+	
 	Math.MakeVectors( angles );
 	
+	return g_Engine.v_forward;
+}
+
+CBaseEntity@ TraceLook(CBasePlayer@ plr, Vector swapDir, float dist=1)
+{
+	Vector vecSrc = plr.pev.origin;	
+	
+	plr.pev.solid = SOLID_NOT;
+	
 	TraceResult tr;
-	Vector dir = g_Engine.v_forward * dist;
+	Vector dir = swapDir * dist;
 	HULL_NUMBER hullType = plr.pev.flags & FL_DUCKING != 0 ? head_hull : human_hull;
-	g_Utility.TraceHull( vecSrc, vecSrc + dir, dont_ignore_monsters, hullType, plr.edict(), tr );
+	g_Utility.TraceHull( vecSrc, vecSrc + dir, dont_ignore_monsters, hullType, null, tr );
 	
 	// try again in case the blocker is on a slope or stair
-	if (angles.x == 0 and g_EntityFuncs.Instance( tr.pHit ) !is null and g_EntityFuncs.Instance( tr.pHit ).IsBSPModel()) {
+	if (swapDir.z == 0 and g_EntityFuncs.Instance( tr.pHit ) !is null and g_EntityFuncs.Instance( tr.pHit ).IsBSPModel()) {
 		Vector verticalDir = Vector(0,0,36);
 		if (plr.pev.flags & FL_ONGROUND == 0) {
 			// probably on the ceiling, so try starting the trace lower instead (e.g. negative gravity or ladder)
 			verticalDir.z = -36; 
 		}
 		
-		g_Utility.TraceHull( vecSrc, vecSrc + verticalDir, dont_ignore_monsters, hullType, plr.edict(), tr );
+		g_Utility.TraceHull( vecSrc, vecSrc + verticalDir, dont_ignore_monsters, hullType, null, tr );
 		if (g_EntityFuncs.Instance( tr.pHit ) is null or g_EntityFuncs.Instance( tr.pHit ).IsBSPModel()) {
-			g_Utility.TraceHull( tr.vecEndPos, tr.vecEndPos + dir, dont_ignore_monsters, hullType, plr.edict(), tr );
+			g_Utility.TraceHull( tr.vecEndPos, tr.vecEndPos + dir, dont_ignore_monsters, hullType, null, tr );
 		}
 	}
+	
+	plr.pev.solid = SOLID_SLIDEBOX;
 
 	return g_EntityFuncs.Instance( tr.pHit );
 }
@@ -159,15 +168,41 @@ string format_float(float f)
 	return "" + int(f) + "." + decimal;
 }
 
+array<CBaseEntity@> getAntiblockTargets(CBasePlayer@ plr, Vector swapDir) {
+	array<CBaseEntity@> targets;
+
+	for (int i = 0; i < 4; i++) {
+		CBaseEntity@ target = TraceLook(plr, swapDir);
+		
+		if (target is null or !target.IsPlayer()) {
+			break;
+		}
+		
+		targets.insertLast(target);
+		target.pev.solid = SOLID_NOT;
+	}
+	
+	for (uint i = 0; i < targets.length(); i++) {
+		targets[i].pev.solid = SOLID_SLIDEBOX;
+	}
+	
+	return targets;
+}
+
 HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 {	
 	if (plr.m_afButtonPressed & IN_USE == 0 or g_disabled.GetBool()) {
 		return HOOK_CONTINUE;
 	}
 	
-	CBaseEntity@ target = TraceLook(plr);
+	Vector swapDir = getSwapDir(plr);
+	array<CBaseEntity@> targets = getAntiblockTargets(plr, swapDir);
+	if (targets.length() == 0)
+		return HOOK_CONTINUE;
+		
+	CBaseEntity@ target = targets[0];
 	
-	if (target !is null and target.IsPlayer() and plr.pev.flags & FL_ONTRAIN == 0) {
+	if (target !is null and plr.pev.flags & FL_ONTRAIN == 0) {
 		CustomKeyvalues@ pCustom = plr.GetCustomKeyvalues();
 		CustomKeyvalues@ tCustom = target.GetCustomKeyvalues();
 		CustomKeyvalue pValue( pCustom.GetKeyvalue( "$f_lastAntiBlock" ) );
@@ -183,23 +218,87 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 			return HOOK_CONTINUE;
 		}
 	
-		Vector srcOri = plr.pev.origin;
-		bool srcDucking = plr.pev.flags & FL_DUCKING != 0;
-		bool dstDucking = target.pev.flags & FL_DUCKING != 0;
-		
-		plr.pev.origin = target.pev.origin;
-		if (dstDucking) {
-			plr.pev.flDuckTime = 26;
-			plr.pev.flags |= FL_DUCKING;
-		} else if (srcDucking) {
-			plr.pev.origin.z -= 18;
+		bool swappedMultiple = false;
+		if (targets.length() > 1) {
+			bool allSafeSwaps = true;
+			
+			array<Vector> newTargetPos;
+			
+			float maxDist = -999;
+			plr.pev.solid = SOLID_NOT;
+			for (uint i = 0; i < targets.length(); i++) {
+				targets[i].pev.solid = SOLID_NOT;
+			}
+			
+			for (uint i = 0; i < targets.length(); i++) {
+				Vector vecSrc = targets[i].pev.origin;
+				
+				newTargetPos.insertLast(targets[i].pev.origin);
+				if (swapDir.z != 0) {
+					newTargetPos[i].z = plr.pev.origin.z;
+				} else if (swapDir.y != 0) {
+					newTargetPos[i].y = plr.pev.origin.y;
+				} else if (swapDir.x != 0) {
+					newTargetPos[i].x = plr.pev.origin.x;
+				}
+				
+				float dist = (newTargetPos[i] - targets[i].pev.origin).Length();
+				if (dist > maxDist) {
+					maxDist = dist;
+				}
+					
+				TraceResult tr;
+				g_Utility.TraceHull( vecSrc, newTargetPos[i], dont_ignore_monsters, head_hull, targets[i].edict(), tr );
+				
+				if (tr.flFraction < 1.0f) {
+					allSafeSwaps = false;
+					break;
+				}
+			}
+			
+			if (allSafeSwaps) {
+				TraceResult tr;
+				g_Utility.TraceHull( plr.pev.origin, plr.pev.origin + swapDir*maxDist, dont_ignore_monsters, head_hull, null, tr );
+				allSafeSwaps = tr.flFraction >= 1.0f;
+			}
+			
+			if (allSafeSwaps) {				
+				for (uint i = 0; i < targets.length(); i++) {
+					targets[i].pev.origin = newTargetPos[i];
+					targets[i].pev.flDuckTime = 26;
+					targets[i].pev.flags |= FL_DUCKING;
+				}
+				
+				plr.pev.origin = plr.pev.origin + swapDir*maxDist;
+				plr.pev.flDuckTime = 26;
+				plr.pev.flags |= FL_DUCKING;
+				
+				swappedMultiple = true;
+			}
+			
+			plr.pev.solid = SOLID_SLIDEBOX;
+			for (uint i = 0; i < targets.length(); i++) {
+				targets[i].pev.solid = SOLID_SLIDEBOX;
+			}
+		}
+	
+		if (!swappedMultiple) {
+			Vector srcOri = plr.pev.origin;
+			bool srcDucking = plr.pev.flags & FL_DUCKING != 0;
+			bool dstDucking = target.pev.flags & FL_DUCKING != 0;
+			
+			plr.pev.origin = target.pev.origin;
+			if (dstDucking) {
+				plr.pev.flDuckTime = 26;
+				plr.pev.flags |= FL_DUCKING;
+			} else if (srcDucking) {
+				target.pev.flDuckTime = 26;
+				target.pev.flags |= FL_DUCKING;
+			}
+			
+			target.pev.origin = srcOri;
 		}
 		
-		target.pev.origin = srcOri;
-		if (srcDucking and !dstDucking) {
-			target.pev.flDuckTime = 26;
-			target.pev.flags |= FL_DUCKING;
-		}
 		
 		pCustom.SetKeyvalue( "$f_lastAntiBlock", g_Engine.time );
 		tCustom.SetKeyvalue( "$f_lastAntiBlock", g_Engine.time );
