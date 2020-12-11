@@ -79,25 +79,25 @@ void doorLoop() {
 			if (delay < 1.0f) {
 				state.blockCounter++;
 				
-				if (state.blockCounter >= 12) {
+				if (state.blockCounter >= 40) {
 					ent.pev.dmg = 1000;
 				}
-				else if (state.blockCounter >= 10) {
+				else if (state.blockCounter >= 32) {
 					ent.pev.dmg = 500;
 				}
-				else if (state.blockCounter >= 8) {
+				else if (state.blockCounter >= 24) {
 					ent.pev.dmg = 100;
 				}
-				else if (state.blockCounter >= 4) {
+				else if (state.blockCounter >= 16) {
 					ent.pev.dmg = 40; // any higher than this and there's a chance to gib
 				}
-				else if (state.blockCounter >= 2) {
+				else if (state.blockCounter >= 8) {
 					ent.pev.dmg = 10;
 				}
 				
 				// blocker could be also be the opener, which the door won't always do damage to when blocked
 				// openers can do this by lodging themselves into the hinge of the door and looking in a certain direction.
-				if (state.blockCounter >= 16) {
+				if (state.blockCounter >= 32) {
 					CBaseEntity@ activator = ent.m_hActivator;
 					activator.TakeDamage( ent.pev, ent.pev, ent.pev.dmg, DMG_CRUSH);
 				}
