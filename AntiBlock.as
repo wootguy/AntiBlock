@@ -354,7 +354,7 @@ HookReturnCode PlayerTakeDamage(DamageInfo@ info)
 	entvars_t@ pevAttacker = info.pAttacker !is null ? info.pAttacker.pev : null;
 	
 	int stomp_mode = g_stomp_mode.GetInt();
-	bool stomping_enabled = stomp_mode > STOMP_OFF || stomp_mode < STOMP_MODES;
+	bool stomping_enabled = stomp_mode > STOMP_OFF && stomp_mode < STOMP_MODES;
 
 	if (stomping_enabled && info.bitsDamageType & DMG_FALL != 0) {		
 		array<CBaseEntity@> ent_hits;
