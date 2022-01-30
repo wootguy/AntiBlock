@@ -1,5 +1,11 @@
 # AntiBlock
-A simple solution to the player blocking problem. +USE players to swap places with them.
+A simple solution to the player blocking problem. +USE players to swap places with players, or +RELOAD to swap with friendly monsters.
+
+Problems this solves:
+- Player blocking a ladder/vent/doorway by refusing to move.
+- Player standing at the bottom of long vertical drops, gibbing anyone who falls on them.
+- Player preventing rotating doors from opening by standing on the opposite side.
+- Monster blocking a doorway by getting stuck.
 
 # CVars 
 `as_command antiblock.disabled` disables the plugin  
