@@ -168,10 +168,12 @@ string format_float(float f)
 	return "" + int(f) + "." + decimal;
 }
 
-bool isSwappableMonster(CBasePlayer@ plr, CBaseEntity@ mon) {	
-	if (mon.IsBSPModel()) {
+bool isSwappableMonster(CBasePlayer@ plr, CBaseEntity@ target) {	
+	if (!target.IsMonster()) {
 		return false;
 	}
+	
+	CBaseMonster@ mon = cast<CBaseMonster@>(target);
 
 	if (plr.IRelationship(mon) > R_NO) {
 		g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCENTER, "Swap target not friendly\n");
@@ -181,13 +183,19 @@ bool isSwappableMonster(CBasePlayer@ plr, CBaseEntity@ mon) {
 	Vector plrSz = plr.pev.absmax - plr.pev.absmin;
 	Vector monSz = mon.pev.absmax - mon.pev.absmin;
 	
-	if (monSz.x > plrSz.x || monSz.y > plrSz.y || monSz.z > plrSz.z) {
+	float epsilon = 0.01f; // bounding boxes are sometimes off by a tiny fraction
+	if (monSz.x-epsilon > plrSz.x || monSz.y-epsilon > plrSz.y || monSz.z-epsilon > plrSz.z) {
 		if (plr.pev.flags & FL_DUCKING != 0) {
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCENTER, "Swap target too large or can't duck\n");
 		} else {
 			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCENTER, "Swap target too large\n");
 		}
 		
+		return false;
+	}
+	
+	if (mon.m_hCine.GetEntity() !is null) {
+		g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCENTER, "Swap target is busy\n");
 		return false;
 	}
 	
