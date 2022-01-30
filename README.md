@@ -1,5 +1,5 @@
 # AntiBlock
-A simple solution to the player blocking problem. +USE players to swap places with players, or +RELOAD to swap with friendly monsters.
+A simple solution to the player blocking problem. Press your +USE key to swap places with players, or +RELOAD key to swap with friendly monsters.
 
 Problems this solves:
 - Player blocking a ladder/vent/doorway by refusing to move.
