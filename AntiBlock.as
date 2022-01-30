@@ -168,14 +168,48 @@ string format_float(float f)
 	return "" + int(f) + "." + decimal;
 }
 
-array<CBaseEntity@> getAntiblockTargets(CBasePlayer@ plr, Vector swapDir) {
+bool isSwappableMonster(CBasePlayer@ plr, CBaseEntity@ mon) {	
+	if (mon.IsBSPModel()) {
+		return false;
+	}
+
+	if (plr.IRelationship(mon) > R_NO) {
+		g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCENTER, "Swap target not friendly\n");
+		return false;
+	}
+	
+	Vector plrSz = plr.pev.absmax - plr.pev.absmin;
+	Vector monSz = mon.pev.absmax - mon.pev.absmin;
+	
+	if (monSz.x > plrSz.x || monSz.y > plrSz.y || monSz.z > plrSz.z) {
+		if (plr.pev.flags & FL_DUCKING != 0) {
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCENTER, "Swap target too large or can't duck\n");
+		} else {
+			g_PlayerFuncs.ClientPrint(plr, HUD_PRINTCENTER, "Swap target too large\n");
+		}
+		
+		return false;
+	}
+	
+	return true;
+}
+
+array<CBaseEntity@> getAntiblockTargets(CBasePlayer@ plr, Vector swapDir, bool playersNotMonsters) {
 	array<CBaseEntity@> targets;
 
 	for (int i = 0; i < 4; i++) {
 		CBaseEntity@ target = TraceLook(plr, swapDir);
 		
-		if (target is null or !target.IsPlayer()) {
+		if (target is null) {
 			break;
+		}
+		
+		if (playersNotMonsters and !target.IsPlayer()) {
+			continue;
+		}
+		
+		if (!playersNotMonsters and (target.IsPlayer() or !isSwappableMonster(plr, target))) {
+			continue;
 		}
 		
 		targets.insertLast(target);
@@ -202,12 +236,13 @@ bool swapCooledDown(CBasePlayer@ swapper, float maxSwapTime) {
 
 HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 {	
-	if (plr.m_afButtonPressed & IN_USE == 0 or g_disabled.GetBool()) {
+	if (plr.m_afButtonPressed & (IN_RELOAD | IN_USE) == 0 or g_disabled.GetBool()) {
 		return HOOK_CONTINUE;
 	}
+	bool wantsPlayerSwap = plr.m_afButtonPressed & IN_USE != 0;
 	
 	Vector swapDir = getSwapDir(plr);
-	array<CBaseEntity@> targets = getAntiblockTargets(plr, swapDir);
+	array<CBaseEntity@> targets = getAntiblockTargets(plr, swapDir, wantsPlayerSwap);
 	if (targets.length() == 0)
 		return HOOK_CONTINUE;
 		
@@ -262,7 +297,9 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 				}
 					
 				TraceResult tr;
-				g_Utility.TraceHull( vecSrc, newTargetPos[i], dont_ignore_monsters, head_hull, targets[i].edict(), tr );
+				
+				HULL_NUMBER spaceNeeded = targets[i].IsPlayer() or plr.pev.flags & FL_DUCKING != 0 ? head_hull : human_hull;
+				g_Utility.TraceHull( vecSrc, newTargetPos[i], dont_ignore_monsters, spaceNeeded, targets[i].edict(), tr );
 				
 				if (tr.flFraction < 1.0f) {
 					allSafeSwaps = false;
@@ -279,8 +316,15 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 			if (allSafeSwaps) {				
 				for (uint i = 0; i < targets.length(); i++) {
 					targets[i].pev.origin = newTargetPos[i];
-					targets[i].pev.flDuckTime = 26;
-					targets[i].pev.flags |= FL_DUCKING;
+					if (targets[i].IsPlayer()) {
+						targets[i].pev.flDuckTime = 26;
+						targets[i].pev.flags |= FL_DUCKING;
+					} else {
+						// monster origins are on the floor and player origins aren't
+						float zDiff = plr.pev.flags & FL_DUCKING != 0 ? 18 : 36;
+						plr.pev.origin.z += zDiff;
+						target.pev.origin.z -= zDiff;
+					}
 					
 					CustomKeyvalues@ t2Custom = targets[i].GetCustomKeyvalues();
 					t2Custom.SetKeyvalue( "$f_lastAntiBlock", g_Engine.time );
@@ -310,10 +354,16 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 			
 			Vector srcOri = plr.pev.origin;
 			bool srcDucking = plr.pev.flags & FL_DUCKING != 0;
-			bool dstDucking = target.pev.flags & FL_DUCKING != 0;
+			bool dstDucking = target.pev.flags & FL_DUCKING != 0 || !target.IsPlayer();
 			
 			plr.pev.origin = target.pev.origin;
 			target.pev.origin = srcOri;
+			
+			if (!target.IsPlayer()) {
+				float zDiff = srcDucking ? 18 : 36;
+				plr.pev.origin.z += zDiff;
+				target.pev.origin.z -= zDiff;
+			}
 			
 			if (dstDucking) {
 				plr.pev.flDuckTime = 26;
@@ -415,7 +465,7 @@ HookReturnCode PlayerTakeDamage(DamageInfo@ info)
 					continue; // first idx is always the stomper
 				}
 				
-				if (ent_hits[i].IsPlayer()) {
+				if (ent_hits[i].IsPlayer() and (ent_hits[i].pev.flags & FL_GODMODE) == 0) {
 					ent_hits[i].pev.dmg_take += dmgSplit;
 					ent_hits[i].pev.health -= dmgSplit;
 					if (ent_hits[i].pev.health <= 0) {
