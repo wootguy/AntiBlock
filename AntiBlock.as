@@ -169,7 +169,7 @@ string format_float(float f)
 }
 
 bool isSwappableMonster(CBasePlayer@ plr, CBaseEntity@ target) {	
-	if (!target.IsMonster()) {
+	if (!target.IsMonster() or !target.IsAlive()) {
 		return false;
 	}
 	
