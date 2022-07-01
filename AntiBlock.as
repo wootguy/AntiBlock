@@ -99,7 +99,9 @@ void doorLoop() {
 				// openers can do this by lodging themselves into the hinge of the door and looking in a certain direction.
 				if (state.blockCounter >= 32) {
 					CBaseEntity@ activator = ent.m_hActivator;
-					activator.TakeDamage( ent.pev, ent.pev, ent.pev.dmg, DMG_CRUSH);
+					if (ent !is null) {
+						activator.TakeDamage( ent.pev, ent.pev, ent.pev.dmg, DMG_CRUSH);
+					}
 				}
 				
 			} else {
