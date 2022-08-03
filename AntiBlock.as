@@ -329,6 +329,7 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 					if (targets[i].IsPlayer()) {
 						targets[i].pev.flDuckTime = 26;
 						targets[i].pev.flags |= FL_DUCKING;
+						targets[i].pev.view_ofs = Vector(0,0,12);
 					} else {
 						// monster origins are on the floor and player origins aren't
 						float zDiff = plr.pev.flags & FL_DUCKING != 0 ? 18 : 36;
@@ -343,6 +344,7 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 				plr.pev.origin = plr.pev.origin + swapDir*maxDist;
 				plr.pev.flDuckTime = 26;
 				plr.pev.flags |= FL_DUCKING;
+				plr.pev.view_ofs = Vector(0,0,12);
 				
 				swappedMultiple = true;
 			}
@@ -378,6 +380,7 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 			if (dstDucking) {
 				plr.pev.flDuckTime = 26;
 				plr.pev.flags |= FL_DUCKING;
+				plr.pev.view_ofs = Vector(0,0,12);
 				
 				// prevent gibbing on elevators when swapper is crouching and swappee is not
 				CBaseEntity@ dstElev = g_EntityFuncs.Instance( target.pev.groundentity );
@@ -388,6 +391,7 @@ HookReturnCode PlayerUse( CBasePlayer@ plr, uint& out uiFlags )
 			if (srcDucking) {
 				target.pev.flDuckTime = 26;
 				target.pev.flags |= FL_DUCKING;
+				target.pev.view_ofs = Vector(0,0,12);
 				
 				CBaseEntity@ srcElev = g_EntityFuncs.Instance( plr.pev.groundentity );
 				if (!dstDucking && srcElev !is null && srcElev.pev.velocity.z > 0) {
