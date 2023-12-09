@@ -1,5 +1,8 @@
 #include "mmlib.h"
 #include <string>
+#include <iostream>
+#include <ctime>
+#include <fstream>
 
 using namespace std;
 
@@ -15,6 +18,10 @@ plugin_info_t Plugin_info = {
     PT_ANYTIME,	// (when) loadable
     PT_ANYPAUSE	// (when) unloadable
 };
+
+float g_cooldown = 0.5f;
+int lastButtons[33];
+float lastAntiBlock[33];
 
 bool isBspModel(edict_t* ent) {
 	return ent && (ent->v.solid == SOLID_BSP || ent->v.movetype == MOVETYPE_PUSHSTEP);
@@ -74,8 +81,6 @@ vector<edict_t*> getAntiblockTargets(edict_t* plr, Vector swapDir) {
 	return targets;
 }
 
-float g_cooldown = 0.5f;
-
 bool swapCooledDown(edict_t* swapper, float maxSwapTime) {
 	if (gpGlobals->time - maxSwapTime < g_cooldown) {
 		return false;
@@ -103,9 +108,6 @@ Vector getSwapDir(edict_t* plr) {
 	return gpGlobals->v_forward;
 }
 
-int lastButtons[33];
-float lastAntiBlock[33];
-
 void PostThink(edict_t* plr) {
 	int eidx = ENTINDEX(plr);
 	int buttonsPressed = plr->v.button & (~lastButtons[eidx]);
@@ -114,8 +116,6 @@ void PostThink(edict_t* plr) {
 	if ((buttonsPressed & IN_USE) == 0) {
 		RETURN_META(MRES_IGNORED);
 	}
-
-	println("PRESSED %d", buttonsPressed);
 
 	Vector swapDir = getSwapDir(plr);
 	vector<edict_t*> targets = getAntiblockTargets(plr, swapDir);
@@ -278,12 +278,12 @@ void PostThink(edict_t* plr) {
 void MapInit(edict_t* edict_list, int edictCount, int clientMax) {
 	memset(lastButtons, 0, sizeof(int) * 33);
 	memset(lastAntiBlock, 0, sizeof(float) * 33);
+	RETURN_META(MRES_IGNORED);
 }
 
 void PluginInit() {
     g_dll_hooks.pfnPlayerPostThink = PostThink;
 	g_dll_hooks.pfnServerActivate = MapInit;
-
 }
 
 void PluginExit() {
