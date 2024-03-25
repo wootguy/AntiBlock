@@ -11,3 +11,4 @@ add_library(${PROJECT_NAME} SHARED)
 
 add_subdirectory(mmlib)
 mmlib_default_setup()
+add_compile_definitions(LOAD_GAME_API)

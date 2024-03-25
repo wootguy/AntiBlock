@@ -279,7 +279,9 @@ void MapInit(edict_t* edict_list, int edictCount, int clientMax) {
 	memset(lastButtons, 0, sizeof(int) * 33);
 	memset(lastAntiBlock, 0, sizeof(float) * 33);
 
-	g_engfuncs.pfnPrecacheSound("weapons/xbow_hitbod2.wav");
+	if (g_mod_api == MOD_API_HLCOOP) {
+		g_hlcoop_funcs.pfnPrecacheSound("weapons/xbow_hitbod2.wav");
+	}
 
 	RETURN_META(MRES_IGNORED);
 }
