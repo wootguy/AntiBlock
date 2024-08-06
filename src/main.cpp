@@ -113,7 +113,7 @@ void PostThink(edict_t* plr) {
 	int buttonsPressed = plr->v.button & (~lastButtons[eidx]);
 	lastButtons[eidx] = plr->v.button;
 
-	if ((buttonsPressed & IN_USE) == 0) {
+	if ((buttonsPressed & IN_USE) == 0 || (plr->v.iuser1 != 0)) {
 		RETURN_META(MRES_IGNORED);
 	}
 
@@ -242,24 +242,36 @@ void PostThink(edict_t* plr) {
 				target->v.origin.z -= zDiff;
 			}
 
+			bool dstElev = !FNullEnt(target->v.groundentity) && target->v.groundentity->v.velocity.z != 0;
+			bool srcElev = !FNullEnt(plr->v.groundentity) && plr->v.groundentity->v.velocity.z != 0;
+
+			// prevent elevator gibbing
+			if (dstElev) {
+				plr->v.origin.z += 18;
+			}
+			if (srcElev) {
+				target->v.origin.z += 18;
+			}
+
 			if (dstDucking) {
 				plr->v.flDuckTime = 26;
 				plr->v.flags |= FL_DUCKING;
 				plr->v.view_ofs = Vector(0, 0, 12);
 
 				// prevent gibbing on elevators when swapper is crouching and swappee is not
-				edict_t* dstElev = target->v.groundentity;
-				if (!srcDucking && dstElev && dstElev->v.velocity.z > 0) {
+				// (additional height needed on top of the default extra height)
+				if (!srcDucking && dstElev) {
 					plr->v.origin.z += 18;
 				}
 			}
+
 			if (srcDucking) {
 				target->v.flDuckTime = 26;
 				target->v.flags |= FL_DUCKING;
 				target->v.view_ofs = Vector(0, 0, 12);
 
-				edict_t* srcElev = plr->v.groundentity;
-				if (!dstDucking && srcElev && srcElev->v.velocity.z > 0) {
+				
+				if (!dstDucking && srcElev) {
 					target->v.origin.z += 18;
 				}
 			}
