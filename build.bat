@@ -1,1 +1,0 @@
-call mmlib\build.bat
