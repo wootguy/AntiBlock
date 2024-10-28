@@ -1,46 +1,35 @@
-#include "mmlib.h"
-#include <string>
-#include <iostream>
-#include <ctime>
-#include <fstream>
+#include "extdll.h"
+#include "util.h"
+#include "cbase.h"
+#include "CBasePlayer.h"
+#include "PluginHooks.h"
 
 using namespace std;
-
-// Description of plugin
-plugin_info_t Plugin_info = {
-    META_INTERFACE_VERSION,	// ifvers
-    "AntiBlock",	// name
-    "1.0",	// version
-    __DATE__,	// date
-    "w00tguy",	// author
-    "github",	// url
-    "ANTIBLOCK",	// logtag, all caps please
-    PT_ANYTIME,	// (when) loadable
-    PT_ANYPAUSE	// (when) unloadable
-};
 
 float g_cooldown = 0.5f;
 int lastButtons[33];
 float lastAntiBlock[33];
 
+HLCOOP_PLUGIN_HOOKS g_hooks;
+
 bool isBspModel(edict_t* ent) {
 	return ent && (ent->v.solid == SOLID_BSP || ent->v.movetype == MOVETYPE_PUSHSTEP);
 }
 
-edict_t* TraceLook(edict_t* plr, Vector swapDir, float dist = 1) {
-	Vector vecSrc = plr->v.origin;
+edict_t* TraceLook(CBasePlayer* plr, Vector swapDir, float dist = 1) {
+	Vector vecSrc = plr->pev->origin;
 
-	plr->v.solid = SOLID_NOT;
+	plr->pev->solid = SOLID_NOT;
 
 	TraceResult tr;
 	Vector dir = swapDir * dist;
-	int hullType = (plr->v.flags & FL_DUCKING) ? head_hull : human_hull;
+	int hullType = (plr->pev->flags & FL_DUCKING) ? head_hull : human_hull;
 	TRACE_HULL(vecSrc, vecSrc + dir, dont_ignore_monsters, hullType, NULL, &tr);
 
 	// try again in case the blocker is on a slope or stair
 	if (swapDir.z == 0 && tr.pHit && isBspModel(tr.pHit)) {
 		Vector verticalDir = Vector(0, 0, 36);
-		if ((plr->v.flags & FL_ONGROUND) == 0) {
+		if ((plr->pev->flags & FL_ONGROUND) == 0) {
 			// probably on the ceiling, so try starting the trace lower instead (e.g. negative gravity or ladder)
 			verticalDir.z = -36;
 		}
@@ -51,12 +40,12 @@ edict_t* TraceLook(edict_t* plr, Vector swapDir, float dist = 1) {
 		}
 	}
 
-	plr->v.solid = SOLID_SLIDEBOX;
+	plr->pev->solid = SOLID_SLIDEBOX;
 
 	return tr.pHit;
 }
 
-vector<edict_t*> getAntiblockTargets(edict_t* plr, Vector swapDir) {
+vector<edict_t*> getAntiblockTargets(CBasePlayer* plr, Vector swapDir) {
 	vector<edict_t*> targets;
 
 	for (int i = 0; i < 4; i++) {
@@ -65,8 +54,8 @@ vector<edict_t*> getAntiblockTargets(edict_t* plr, Vector swapDir) {
 		if (!target) {
 			break;
 		}
-
-		if (!isValidPlayer(target)) {
+		
+		if (!IsValidPlayer(target)) {
 			continue;
 		}
 
@@ -81,15 +70,15 @@ vector<edict_t*> getAntiblockTargets(edict_t* plr, Vector swapDir) {
 	return targets;
 }
 
-bool swapCooledDown(edict_t* swapper, float maxSwapTime) {
+bool swapCooledDown(CBasePlayer* swapper, float maxSwapTime) {
 	if (gpGlobals->time - maxSwapTime < g_cooldown) {
 		return false;
 	}
 	return true;
 }
 
-Vector getSwapDir(edict_t* plr) {
-	Vector angles = plr->v.v_angle;
+Vector getSwapDir(CBasePlayer* plr) {
+	Vector angles = plr->pev->v_angle;
 
 	// snap to 90 degree angles
 	angles.y = (int((angles.y + 180 + 45) / 90) * 90) - 180;
@@ -108,23 +97,23 @@ Vector getSwapDir(edict_t* plr) {
 	return gpGlobals->v_forward;
 }
 
-void PostThink(edict_t* plr) {
-	int eidx = ENTINDEX(plr);
-	int buttonsPressed = plr->v.button & (~lastButtons[eidx]);
-	lastButtons[eidx] = plr->v.button;
+HOOK_RETURN_DATA PlayerUse(CBasePlayer* plr) {
+	int eidx = plr->entindex();
+	int buttonsPressed = plr->pev->button & (~lastButtons[eidx]);
+	lastButtons[eidx] = plr->pev->button;
 
-	if ((buttonsPressed & IN_USE) == 0 || (plr->v.iuser1 != 0)) {
-		RETURN_META(MRES_IGNORED);
+	if ((buttonsPressed & IN_USE) == 0 || (plr->pev->iuser1 != 0)) {
+		return HOOK_CONTINUE;
 	}
 
 	Vector swapDir = getSwapDir(plr);
 	vector<edict_t*> targets = getAntiblockTargets(plr, swapDir);
 	if (targets.size() == 0)
-		RETURN_META(MRES_IGNORED);
+		return HOOK_CONTINUE;
 
 	edict_t* target = targets[0];
 
-	if (target && (plr->v.flags & FL_ONTRAIN) == 0) {
+	if (target && (plr->pev->flags & FL_ONTRAIN) == 0) {
 		bool swappedMultiple = false;
 
 		if (targets.size() > 1) {
@@ -139,13 +128,13 @@ void PostThink(edict_t* plr) {
 			}
 
 			if (!swapCooledDown(plr, mostRecentSwapTime)) {
-				RETURN_META(MRES_IGNORED);
+				return HOOK_CONTINUE;
 			}
 
 			vector<Vector> newTargetPos;
 
 			float maxDist = -999;
-			plr->v.solid = SOLID_NOT;
+			plr->pev->solid = SOLID_NOT;
 			for (uint32_t i = 0; i < targets.size(); i++) {
 				targets[i]->v.solid = SOLID_NOT;
 			}
@@ -155,13 +144,13 @@ void PostThink(edict_t* plr) {
 
 				newTargetPos.push_back(targets[i]->v.origin);
 				if (swapDir.z != 0) {
-					newTargetPos[i].z = plr->v.origin.z;
+					newTargetPos[i].z = plr->pev->origin.z;
 				}
 				else if (swapDir.y != 0) {
-					newTargetPos[i].y = plr->v.origin.y;
+					newTargetPos[i].y = plr->pev->origin.y;
 				}
 				else if (swapDir.x != 0) {
-					newTargetPos[i].x = plr->v.origin.x;
+					newTargetPos[i].x = plr->pev->origin.x;
 				}
 
 				float dist = (newTargetPos[i] - targets[i]->v.origin).Length();
@@ -182,7 +171,7 @@ void PostThink(edict_t* plr) {
 
 			if (allSafeSwaps) {
 				TraceResult tr;
-				TRACE_HULL(plr->v.origin, plr->v.origin + swapDir * maxDist, dont_ignore_monsters, head_hull, NULL, &tr);
+				TRACE_HULL(plr->pev->origin, plr->pev->origin + swapDir * maxDist, dont_ignore_monsters, head_hull, NULL, &tr);
 				allSafeSwaps = tr.flFraction >= 1.0f;
 			}
 
@@ -197,8 +186,8 @@ void PostThink(edict_t* plr) {
 					}
 					else {
 						// monster origins are on the floor and player origins aren't
-						float zDiff = plr->v.flags & FL_DUCKING != 0 ? 18 : 36;
-						plr->v.origin.z += zDiff;
+						float zDiff = plr->pev->flags & FL_DUCKING != 0 ? 18 : 36;
+						plr->pev->origin.z += zDiff;
 						target->v.origin.z -= zDiff;
 					}
 					*/
@@ -209,15 +198,15 @@ void PostThink(edict_t* plr) {
 					lastAntiBlock[ENTINDEX(targets[i])] = gpGlobals->time;
 				}
 
-				plr->v.origin = plr->v.origin + swapDir * maxDist;
-				plr->v.flDuckTime = 26;
-				plr->v.flags |= FL_DUCKING;
-				plr->v.view_ofs = Vector(0, 0, 12);
+				plr->pev->origin = plr->pev->origin + swapDir * maxDist;
+				plr->pev->flDuckTime = 26;
+				plr->pev->flags |= FL_DUCKING;
+				plr->pev->view_ofs = Vector(0, 0, 12);
 
 				swappedMultiple = true;
 			}
 
-			plr->v.solid = SOLID_SLIDEBOX;
+			plr->pev->solid = SOLID_SLIDEBOX;
 			for (uint32_t i = 0; i < targets.size(); i++) {
 				targets[i]->v.solid = SOLID_SLIDEBOX;
 			}
@@ -225,43 +214,43 @@ void PostThink(edict_t* plr) {
 
 		if (!swappedMultiple) {
 			// don't let blockers immediately swap back to where they were
-			if (!swapCooledDown(plr, Max(lastAntiBlock[eidx], lastAntiBlock[ENTINDEX(target)]))) {
-				RETURN_META(MRES_IGNORED);
+			if (!swapCooledDown(plr, V_max(lastAntiBlock[eidx], lastAntiBlock[ENTINDEX(target)]))) {
+				return HOOK_CONTINUE;
 			}
 
-			Vector srcOri = plr->v.origin;
-			bool srcDucking = (plr->v.flags & FL_DUCKING) != 0;
-			bool dstDucking = (target->v.flags & FL_DUCKING) != 0 || !isValidPlayer(target);
+			Vector srcOri = plr->pev->origin;
+			bool srcDucking = (plr->pev->flags & FL_DUCKING) != 0;
+			bool dstDucking = (target->v.flags & FL_DUCKING) != 0 || !IsValidPlayer(target);
 
-			plr->v.origin = target->v.origin;
+			plr->pev->origin = target->v.origin;
 			target->v.origin = srcOri;
 
-			if (!isValidPlayer(target)) {
+			if (!IsValidPlayer(target)) {
 				float zDiff = srcDucking ? 18 : 36;
-				plr->v.origin.z += zDiff;
+				plr->pev->origin.z += zDiff;
 				target->v.origin.z -= zDiff;
 			}
 
 			bool dstElev = !FNullEnt(target->v.groundentity) && target->v.groundentity->v.velocity.z != 0;
-			bool srcElev = !FNullEnt(plr->v.groundentity) && plr->v.groundentity->v.velocity.z != 0;
+			bool srcElev = !FNullEnt(plr->pev->groundentity) && plr->pev->groundentity->v.velocity.z != 0;
 
 			// prevent elevator gibbing
 			if (dstElev) {
-				plr->v.origin.z += 18;
+				plr->pev->origin.z += 18;
 			}
 			if (srcElev) {
 				target->v.origin.z += 18;
 			}
 
 			if (dstDucking) {
-				plr->v.flDuckTime = 26;
-				plr->v.flags |= FL_DUCKING;
-				plr->v.view_ofs = Vector(0, 0, 12);
+				plr->pev->flDuckTime = 26;
+				plr->pev->flags |= FL_DUCKING;
+				plr->pev->view_ofs = Vector(0, 0, 12);
 
 				// prevent gibbing on elevators when swapper is crouching and swappee is not
 				// (additional height needed on top of the default extra height)
 				if (!srcDucking && dstElev) {
-					plr->v.origin.z += 18;
+					plr->pev->origin.z += 18;
 				}
 			}
 
@@ -270,7 +259,7 @@ void PostThink(edict_t* plr) {
 				target->v.flags |= FL_DUCKING;
 				target->v.view_ofs = Vector(0, 0, 12);
 
-				
+
 				if (!dstDucking && srcElev) {
 					target->v.origin.z += 18;
 				}
@@ -280,28 +269,28 @@ void PostThink(edict_t* plr) {
 			lastAntiBlock[ENTINDEX(target)] = gpGlobals->time;
 		}
 
-		// for half-life only
-		g_engfuncs.pfnEmitSound(plr, CHAN_BODY, "weapons/xbow_hitbod2.wav", 0.7f, 1.0f, 0, 130 + RANDOM_LONG(0, 10));
+		EMIT_SOUND_DYN(plr->edict(), CHAN_BODY, "weapons/xbow_hitbod2.wav", 0.7f, 1.0f, 0, 130 + RANDOM_LONG(0, 10));
 	}
 
-	RETURN_META(MRES_IGNORED);
+	return HOOK_CONTINUE;
 }
 
-void MapInit(edict_t* edict_list, int edictCount, int clientMax) {
+HOOK_RETURN_DATA MapInit() {
 	memset(lastButtons, 0, sizeof(int) * 33);
 	memset(lastAntiBlock, 0, sizeof(float) * 33);
 
-	if (g_mod_api == MOD_API_HLCOOP) {
-		g_hlcoop_funcs.pfnPrecacheSound("weapons/xbow_hitbod2.wav");
-	}
+	PRECACHE_SOUND_ENT(NULL, "weapons/xbow_hitbod2.wav");
 
-	RETURN_META(MRES_IGNORED);
+	return HOOK_CONTINUE;
 }
 
-void PluginInit() {
-    g_dll_hooks.pfnPlayerPostThink = PostThink;
-	g_dll_hooks.pfnServerActivate = MapInit;
+extern "C" int DLLEXPORT PluginInit(HLCOOP_PLUGIN_HOOKS* pFunctionTable, int interfaceVersion) {
+	g_hooks.pfnMapInit = MapInit;
+	g_hooks.pfnPlayerUse = PlayerUse;
+
+	return InitPluginApi(pFunctionTable, &g_hooks, interfaceVersion);
 }
 
-void PluginExit() {
+extern "C" void DLLEXPORT PluginExit() {
+	// nothing to clean up
 }
