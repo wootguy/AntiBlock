@@ -270,6 +270,8 @@ HOOK_RETURN_DATA PlayerUse(CBasePlayer* plr) {
 		}
 
 		EMIT_SOUND_DYN(plr->edict(), CHAN_BODY, "weapons/xbow_hitbod2.wav", 0.7f, 1.0f, 0, 130 + RANDOM_LONG(0, 10));
+	
+		return HOOK_HANDLED_OVERRIDE(0);
 	}
 
 	return HOOK_CONTINUE;
@@ -284,11 +286,11 @@ HOOK_RETURN_DATA MapInit() {
 	return HOOK_CONTINUE;
 }
 
-extern "C" int DLLEXPORT PluginInit(HLCOOP_PLUGIN_HOOKS* pFunctionTable, int interfaceVersion) {
+extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
 	g_hooks.pfnMapInit = MapInit;
 	g_hooks.pfnPlayerUse = PlayerUse;
 
-	return InitPluginApi(pFunctionTable, &g_hooks, interfaceVersion);
+	return InitPluginApi(plugin, &g_hooks, interfaceVersion);
 }
 
 extern "C" void DLLEXPORT PluginExit() {
