@@ -286,11 +286,11 @@ HOOK_RETURN_DATA MapInit() {
 	return HOOK_CONTINUE;
 }
 
-extern "C" int DLLEXPORT PluginInit(void* plugin, int interfaceVersion) {
+extern "C" int DLLEXPORT PluginInit() {
 	g_hooks.pfnMapInit = MapInit;
 	g_hooks.pfnPlayerUse = PlayerUse;
 
-	return InitPluginApi(plugin, &g_hooks, interfaceVersion);
+	return RegisterPlugin(&g_hooks);
 }
 
 extern "C" void DLLEXPORT PluginExit() {
